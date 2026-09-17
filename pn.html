@@ -1393,6 +1393,76 @@ function buildPlot4(){
     ],[]);
   }
 }
+// ===== 图 5 线性模式可拖分割线（V_split）=====
+let cvSplit=0; // 分界电压（全局保留，默认 0；双击分割线/手柄复位；仅页面刷新重置）
+function drawCvDivider(pl,ctx){
+  const mode=(document.querySelector('input[name=p5mode]:checked')||{}).value||'lin';
+  if(mode!=='lin'||!pl.m)return; // 对数模式隐藏
+  const m=pl.m;
+  const px=pl.xToPx(cvSplit);
+  if(px<m.left-10||px>m.right+10)return;
+  // 实线分割线
+  ctx.strokeStyle='rgba(230,237,243,0.85)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(px,m.top);ctx.lineTo(px,m.bottom);ctx.stroke();
+  // 两端同色圆手柄（顶/底各一个，画在裁剪区外不被裁掉）
+  ctx.fillStyle='#0d1117';ctx.strokeStyle='#e6edf3';ctx.lineWidth=1.5;
+  for(const hy of [m.top,m.bottom]){
+    ctx.beginPath();ctx.arc(px,hy,5,0,Math.PI*2);ctx.fill();ctx.stroke();
+  }
+}
+let cvDrag=false,cvDragRAF=null;
+function cvRebuild(){ // rAF 节流重建（重切分两区 + 两轴量程按新区间重算）
+  if(cvDragRAF)return;
+  cvDragRAF=RAF(()=>{cvDragRAF=null;buildPlot5();drawSweepMarker();});
+}
+function cvHit(mx,my){
+  const m=plot5.m;if(!m)return false;
+  const px=plot5.xToPx(cvSplit);
+  if(Math.abs(mx-px)<=8&&my>=m.top&&my<=m.bottom)return true; // 线本体
+  return Math.abs(mx-px)<=8&&(Math.abs(my-m.top)<=8||Math.abs(my-m.bottom)<=8); // 两端手柄
+}
+function bindCvDivider(){
+  const cv=plot5.cv;
+  cv.addEventListener('pointerdown',e=>{
+    const mode=(document.querySelector('input[name=p5mode]:checked')||{}).value||'lin';
+    if(mode!=='lin'||!state.result)return;
+    const r=cv.getBoundingClientRect();
+    if(!cvHit(e.clientX-r.left,e.clientY-r.top))return;
+    cvDrag=true;
+    try{cv.setPointerCapture(e.pointerId);}catch(_){}
+    cv.style.cursor='ew-resize';
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove',e=>{
+    const mode=(document.querySelector('input[name=p5mode]:checked')||{}).value||'lin';
+    const r=cv.getBoundingClientRect();
+    const mx=e.clientX-r.left,my=e.clientY-r.top;
+    if(cvDrag){
+      const m=plot5.m;
+      if(m){
+        const px=Math.max(m.left,Math.min(m.right,mx));
+        cvSplit=Math.max(plot5.xmin,Math.min(plot5.xmax,plot5.pxToX(px)));
+        cvRebuild();
+      }
+    }else{
+      cv.style.cursor=(mode==='lin'&&cvHit(mx,my))?'ew-resize':'';
+    }
+  });
+  const end=e=>{
+    if(!cvDrag)return;
+    cvDrag=false;cv.style.cursor='';
+    try{cv.releasePointerCapture(e.pointerId);}catch(_){}
+  };
+  cv.addEventListener('pointerup',end);
+  cv.addEventListener('pointercancel',end);
+  cv.addEventListener('dblclick',e=>{
+    const mode=(document.querySelector('input[name=p5mode]:checked')||{}).value||'lin';
+    if(mode!=='lin'||!state.result)return;
+    const r=cv.getBoundingClientRect();
+    if(cvHit(e.clientX-r.left,e.clientY-r.top)){cvSplit=0;cvRebuild();}
+  });
+}
+
 function buildPlot5(){
   const res=state.result;if(!res)return;
   const s=res.sweep,NP=s.length;
@@ -1415,6 +1485,8 @@ function buildPlot5(){
     {name:'Cdiff',key:'Cdiff',arr:cf,color:C.Cdiff,width:1.8},
     {name:'Cdep 近似',key:'CdepTh',arr:ct,color:'#9ece6a',width:1},
   ];
+  // 分割线画在最上层（extraDraw 位于裁剪区外，两端手柄不被裁剪；对数模式 drawCvDivider 自隐藏）
+  plot5.extraDraw=(pl,ctx)=>{drawCvDivider(pl,ctx);};
   if(mode==='log'){
     // 单一共享对数轴：Cdep/Cdiff 已被扫描后处理非负钳制，直接取 |C|（下限钳制落轴）
     plot5.opts.logY=true; plot5.opts.logY2=false; plot5.opts.y2Label='';
@@ -1428,11 +1500,20 @@ function buildPlot5(){
       {name:'Cdep 近似',color:'#9ece6a',xs,ys:mk(ct),axis:'y',visible:vis('CdepTh'),width:1},
     ],[]);
   }else{
-    // 线性 = 按电压劈开：V≤0 半段画左轴（小量程，反偏满幅）、V≥0 半段画右轴（大量程），
-    // 接缝在 V=0 且两半共享该点（索引 100），曲线视觉连续；图例/悬停按名称去重。
+    // 线性 = 按电压劈开：V≤V_split 半段画左轴（小量程）、V≥V_split 半段画右轴（大量程），
+    // 分界电压 V_split 由可拖分割线调节；两半共享边界点，曲线视觉连续；图例/悬停按名称去重。
     plot5.opts.logY=false; plot5.opts.logY2=false;
-    const i0=xs.findIndex(v=>Math.abs(v)<1e-9); // 升序 −5..+1，恰为 V=0 的索引 100
+    const i0=Math.max(0,Math.min(NP-1,Math.round((cvSplit-xs[0])/(xs[1]-xs[0])))); // 离 V_split 最近的扫描点
     const xsL=xs.slice(0,i0+1),xsR=xs.slice(i0);
+    // 每区量程 = [0, 本区可见曲线 max×1.05]（“scale 根据曲线 max 决定”）
+    let mxL=0,mxR=0;
+    for(const d of defs){
+      if(!vis(d.key))continue;
+      for(let i=0;i<=i0;i++){const v=d.arr[i];if(isFinite(v)&&v>mxL)mxL=v;}
+      for(let i=i0;i<NP;i++){const v=d.arr[i];if(isFinite(v)&&v>mxR)mxR=v;}
+    }
+    plot5.fixedY=[0,mxL>0?mxL*1.05:1];
+    plot5.fixedY2=[0,mxR>0?mxR*1.05:1];
     const parts=[];
     for(const d of defs){
       parts.push({name:d.name,color:d.color,xs:xsL,ys:d.arr.slice(0,i0+1),axis:'y',visible:vis(d.key),width:d.width});
@@ -1457,8 +1538,9 @@ function drawSweepMarker(){
   plot4.draw();
   $('scanReadout4').textContent='当前点  V = '+V.toFixed(2)+' V · J = '+formatNum(J)+' A/cm²';
   const p5mode=(document.querySelector('input[name=p5mode]:checked')||{}).value||'lin';
-  const cAxis=(p5mode==='log'||V<0)?'y':'y2'; // 线性劈开模式：反偏点落左轴、正偏点落右轴
+  const cAxis=(p5mode==='log'||V<cvSplit)?'y':'y2'; // 线性劈开模式：按分界电压 V_split 落轴
   plot5.extraDraw=(pl,ctx)=>{
+    drawCvDivider(pl,ctx);
     const px=pl.xToPx(V),m=pl.m;
     ctx.strokeStyle='rgba(230,237,243,0.4)';ctx.setLineDash([3,3]);
     ctx.beginPath();ctx.moveTo(px,m.top);ctx.lineTo(px,m.bottom);ctx.stroke();ctx.setLineDash([]);
@@ -1510,6 +1592,7 @@ function renderAll(){
 bindControls();
 buildOvToggles();
 buildP5Toggles();
+bindCvDivider();
 refreshStale();
 startUpdate();
 </script>
