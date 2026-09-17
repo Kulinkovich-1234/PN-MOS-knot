@@ -1,0 +1,401 @@
+% ============================================================================
+% model-doc.tex —— index.html “模型介绍”面板的完整推导文稿（公式唯一源）
+%
+% 本文件可独立编译（xelatex，ctexart 支持中文）。同时它是 index.html 中
+% <!-- MODEL-DOC-BEGIN --> ... <!-- MODEL-DOC-END --> 段全部公式的源：
+% 面板与该段内容同源，公式以 MathJax v3（tex2svg）预渲染为内联 SVG。
+%
+% 条目格式（两行一组，供渲染脚本解析）：
+%   % [eq:唯一名字] [inline|display] [section:小节]
+%   \(...\) 或 \[...\]        ← TeX 源码；渲染时去掉定界符，display 旗标按条目类型
+%
+% 修改 / 新增公式流程：
+%   1. 编辑本文件（保持 % [eq:名字] 标签全局唯一）；同步修改 HTML 面板文字；
+%   2. 临时工作区（勿放项目目录）：mkdir tmp && cd tmp && npm init -y && npm install mathjax@3
+%   3. node 渲染：require('mathjax').init({loader:{load:['input/tex','output/svg']}})
+%      .then(M => M.startup.adaptor.outerHTML(M.tex2svg(TEX源码, {display:布尔})))
+%   4. 内部 id 前缀：本次为全量重写，整段 MODEL-DOC 替换后面板只含单一
+%      会话连续编号的 MJX- 前缀；增量批次已用 MJXT-（显示约定增补，7 条）、MJXTB-（多晶硅栅节，11 条），
+%      下一批请用 MJXTC-，之后依字母顺延。
+%      把新 SVG 字符串中的 'MJX-' 全部替换为该批前缀后再注入。
+%   5. 删除临时工作区。项目目录只保留 index.html 与 model-doc.tex。
+% ============================================================================
+\documentclass[11pt]{ctexart}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\geometry{a4paper,margin=2.5cm}
+\title{MOS 电容一维电热平衡仿真：物理模型与数值方法完整推导}
+\author{index.html 模型介绍面板源文稿}
+\date{}
+\begin{document}
+\maketitle
+
+\noindent 本文与 \texttt{index.html} 的仿真实现逐一对应。单位制：长度 cm、电势 V、浓度 cm$^{-3}$、电荷 C。
+常数（$T=300\,\mathrm{K}$）：
+% [eq:constQ] [inline] [section:二、平衡载流子统计]
+\(q=1.602\times10^{-19}\,\mathrm{C}\)，
+% [eq:constVt] [inline] [section:二、平衡载流子统计]
+\(V_t=kT/q=25.85\,\mathrm{mV}\)，
+% [eq:constEpsi] [inline] [section:二、平衡载流子统计]
+\(\varepsilon_{si}=11.7\,\varepsilon_0\)，
+% [eq:constEpo] [inline] [section:二、平衡载流子统计]
+\(\varepsilon_{ox}=3.9\,\varepsilon_0\)（$\varepsilon_0=8.854\times10^{-14}\,\mathrm{F/cm}$），
+% [eq:constNc] [inline] [section:二、平衡载流子统计]
+\(N_c=2.8\times10^{19}\,\mathrm{cm^{-3}}\)，
+% [eq:constNv] [inline] [section:二、平衡载流子统计]
+\(N_v=1.04\times10^{19}\,\mathrm{cm^{-3}}\)，
+% [eq:constEg] [inline] [section:二、平衡载流子统计]
+\(E_g=1.12\,\mathrm{eV}\)。
+
+\section{物理设定与基本假设}
+
+\subsection{结构与坐标}
+一维 V-M-O-S-V 结构（两个 V 为外接电压源；M=金属栅，SiO$_2$=氧化层，p-Si=衬底，Back=背电极）：
+% [eq:s1coord] [display] [section:一、物理设定]
+\[\mathrm{M}\ (x<-t_{ox})\;-\;\mathrm{SiO_2}\ (-t_{ox}\le x<0)\;-\;\mathrm{p\!-\!Si}\ (0\le x\le L)\;-\;\mathrm{Back}\]
+氧化层厚度
+% [eq:s1tox] [inline] [section:一、物理设定]
+\(t_{ox}\)，衬底受主掺杂
+% [eq:s1NA] [inline] [section:一、物理设定]
+\(N_A\)（均匀），求解深度
+% [eq:s1L] [inline] [section:一、物理设定]
+\(L\)。端电压为栅压
+% [eq:s1VG] [inline] [section:一、物理设定]
+\(V_G\) 与衬底背压
+% [eq:s1VB] [inline] [section:一、物理设定]
+\(V_B\)。
+
+\textbf{参考电势约定}：静电势
+% [eq:s1psi] [inline] [section:一、物理设定]
+\(\psi(x)\) 相对衬底中性体内定义，即
+% [eq:s1psiL] [inline] [section:一、物理设定]
+\(\psi(L)=0\)；$\psi>0$ 表示能带相对体内向下弯（电子能量降低）。表面势
+% [eq:s1psis] [inline] [section:一、物理设定]
+\(\psi_s=\psi(0)\)。
+
+\subsection{假设清单（每条对应最后一节的失效场景）}
+\begin{enumerate}
+  \item 一维无限大平面：所有量只依赖 $x$，边缘效应忽略；
+  \item 热平衡：半导体内费米能级 $E_F$ 平坦（单一 $E_F$），无深耗尽（无快速扫压或光/热产生受限情形）；
+  \item 稳态：$\partial/\partial t=0$；
+  \item 受主完全电离：$N_A^-=N_A$；
+  \item 氧化层理想：无体电荷、无界面态、无漏电流（位移电流之外的直流分量为零）；
+  \item 经典 Fermi-Dirac 统计：忽略量子限域与二维电子气子带；
+  \item 衬底均匀掺杂。
+\end{enumerate}
+
+\subsection{费米能级对齐（接触电势差的来源）}
+接触前金属与半导体的功函数不同：
+% [eq:s1phi] [inline] [section:一、物理设定]
+\(\Phi_m\ne\Phi_s\)（真空能级到 $E_F$ 的能量差，单位 J）。经外部金属通路（V-M-O-S-V 两端的 V）接通瞬间，电子走\textbf{外部金属通路}流动（理想氧化层阻断直流，电子不穿过氧化层），在金属表面与半导体空间电荷区瞬态积累等量异号电荷：
+% [eq:s1charge] [display] [section:一、物理设定]
+\[Q_m=-Q_s\]
+（$Q_m$ 为金属面电荷，$Q_s$ 为半导体单位面积总电荷，单位 $\mathrm{C/cm^2}$；整体电中性要求）。充电的截止条件是整条导通回路的电化学势处处相等——这与平行板电容器充电完全类比：当外电源（含零电压导线）把两电极接通后，载流子重新分布直至费米能级拉平或达到电源维持的差值。稳态下氧化层无直流电流，接触电势差以稳定的内建电场形式保留在氧化层与空间电荷区上。对施加偏压 $V_G-V_B$ 的一般情形，两电极费米能级满足
+% [eq:s1ef] [display] [section:一、物理设定]
+\[E_F^m-E_F^s=-q\,(V_G-V_B)\]
+（电子能量 $-q\varphi$：电势高 $\Delta V$，电子能量低 $q\Delta V$；单位 eV，与 $V_G-V_B$ 以 V 计量自洽）。
+
+\subsection{平带电压}
+功函数差与氧化层固定电荷 $Q_f$ 打包为单一输入参数
+% [eq:s1vfb] [display] [section:一、物理设定]
+\[V_{FB}=\frac{\Phi_{ms}}{q}-\frac{Q_f}{C_{ox}},\qquad \Phi_{ms}=\Phi_m-\Phi_s\]
+其中氧化层单位面积电容
+% [eq:s1cox] [display] [section:一、物理设定]
+\[C_{ox}=\frac{\varepsilon_{ox}}{t_{ox}}\quad [\mathrm{F/cm^2}]\]
+定义在此，后文直接使用。当
+% [eq:s1flat] [inline] [section:一、物理设定]
+\(V_G-V_B=V_{FB}\) 时 $\psi_s=0$、能带平直；$V_{FB}$ 的效果是使整条 C–V 曲线水平平移。
+
+\section{平衡载流子统计与体内约束}
+
+费米-狄拉克分布给出能级占据概率
+% [eq:s2fd] [display] [section:二、平衡载流子统计]
+\[f(E)=\frac{1}{1+\exp[(E-E_F)/kT]}\]
+对导带态密度积分（抛物线能带近似）得载流子浓度
+% [eq:s2np] [display] [section:二、平衡载流子统计]
+\[n=N_c\,F_{1/2}\!\left(\frac{E_F-E_c}{kT}\right)\quad [\mathrm{cm^{-3}}],\qquad p=N_v\,F_{1/2}\!\left(\frac{E_v-E_F}{kT}\right)\quad [\mathrm{cm^{-3}}]\]
+其中半阶费米积分（启动时数值建表，见“数值求解步骤”节）
+% [eq:s2f12] [display] [section:二、平衡载流子统计]
+\[F_{1/2}(\eta)=\frac{2}{\sqrt{\pi}}\int_0^{\infty}\frac{t^{1/2}}{1+e^{\,t-\eta}}\,dt\]
+后文一律用
+% [eq:s2vt] [inline] [section:二、平衡载流子统计]
+\(V_t=kT/q\) 把能量写成电势（eV 与 V 数值相同）。
+
+电子位能为 $-q\psi$，故能带随静电势刚性平移：
+% [eq:s2shift] [display] [section:二、平衡载流子统计]
+\[E_c(x)=E_c(L)-q\,\psi(x),\qquad E_v(x)=E_c(x)-E_g\]
+定义体区约化费米能级
+% [eq:s2eta0] [inline] [section:二、平衡载流子统计]
+\(\eta_{n0}=(E_F-E_c(L))/kT\)（无量纲）。把能带平移式代入：$\eta(x)=(E_F-E_c(x))/kT=\eta_{n0}+\psi(x)/V_t$，于是
+% [eq:s2np2] [display] [section:二、平衡载流子统计]
+\[n(\psi)=N_c F_{1/2}\!\left(\eta_{n0}+\frac{\psi}{V_t}\right),\qquad p(\psi)=N_v F_{1/2}\!\left(\eta_{p0}-\frac{\psi}{V_t}\right)\]
+其中价带侧 $\eta_p(x)=(E_v(x)-E_F)/kT=(E_c(L)-E_g-E_F)/kT-\psi/V_t=-\eta_{n0}-E_g/V_t-\psi/V_t$，即
+% [eq:s2etap] [display] [section:二、平衡载流子统计]
+\[\eta_{p0}=-\eta_{n0}-\frac{E_g}{V_t}\]
+
+体内（$x\to L$，$\psi=0$）电中性 $p-n-N_A=0$，代入上式并移项得 $\eta_{n0}$ 的超越方程（与代码 \texttt{solveNeutral} 同式，即 $-(p-n-N_A)=0$）：
+% [eq:s2neutral] [display] [section:二、平衡载流子统计]
+\[N_c F_{1/2}(\eta_{n0})-N_v F_{1/2}(\eta_{p0})+N_A=0\]
+左端关于 $\eta_{n0}$ 单调递增（第一项增、第二项中 $\eta_{p0}$ 减故其值减），有唯一根，二分法即可求解。
+
+体费米势按“本征能级取带隙中央”的约定定义（忽略 $\frac{kT}{2}\ln(N_v/N_c)$ 的 $\approx 13\,\mathrm{mV}$ 修正）：
+% [eq:s2psif] [display] [section:二、平衡载流子统计]
+\[\psi_F=-\left(V_t\,\eta_{n0}+\frac{E_g}{2}\right)\quad [\mathrm{V}]\]
+p 型 $\psi_F>0$（默认参数 $\psi_F\approx 0.380\,\mathrm{V}$）。
+
+\subsection{图 1 显示参考约定}
+能带图纵轴以半导体费米能级为零点：$E_F^{semi}=0$。由上述能带平移关系，本征费米能级
+% [eq:s2disp] [display] [section:二、平衡载流子统计]
+\[E_i(x)=\psi_F-\psi(x),\qquad E_c(x)=E_i(x)+\frac{E_g}{2},\quad E_v(x)=E_i(x)-\frac{E_g}{2}\]
+注意 $\psi_F$ 前的符号为\textbf{正}：p 型衬底 $E_F$ 靠近 $E_v$，体区 $E_c-E_F=\psi_F+E_g/2\approx0.94\,\mathrm{eV}$、$E_v-E_F=\psi_F-E_g/2\approx-0.18\,\mathrm{eV}$（此前版本曾误写为镜像符号 $-\psi_F$，使能带上下颠倒）。金属侧费米能级由 §1 的费米对齐关系得
+% [eq:s2eff] [display] [section:二、平衡载流子统计]
+\[E_F^{metal}=-(V_G-V_B)\quad [\mathrm{eV}]\]
+
+\section{泊松方程与边界条件}
+
+净电荷密度（受主离子 $-qN_A$ 固定不动）：
+% [eq:s3rho] [display] [section:三、泊松方程与边界条件]
+\[\rho(\psi)=q\,\big[p(\psi)-n(\psi)-N_A\big]\quad [\mathrm{C/cm^3}]\]
+一维泊松方程：
+% [eq:s3poisson] [display] [section:三、泊松方程与边界条件]
+\[\frac{d^2\psi}{dx^2}=-\frac{\rho(\psi)}{\varepsilon_{si}}\quad [\mathrm{V/cm^2}]\]
+（量纲：$[\rho]/[\varepsilon]=(\mathrm{C/cm^3})/(\mathrm{F/cm})=\mathrm{V/cm^2}$，与左侧自洽）。
+
+\textbf{边界 1（体内 Dirichlet）}：
+% [eq:s3dirich] [inline] [section:三、泊松方程与边界条件]
+\(\psi(L)=0\)。$L$ 取约 6 倍最大耗尽宽度
+% [eq:s3wmax] [display] [section:三、泊松方程与边界条件]
+\[W_{max}=\sqrt{\frac{2\,\varepsilon_{si}\,(2\psi_F)}{q\,N_A}},\qquad L\approx 6\,W_{max}\]
+（$L$ 另有限幅 $200\,\mathrm{nm}\sim5\,\mu\mathrm{m}$）保证右端深入电中性区，截断误差可忽略。
+
+\textbf{氧化层内}：无体电荷，拉普拉斯方程
+% [eq:s3lap] [display] [section:三、泊松方程与边界条件]
+\[\frac{d^2\varphi}{dx^2}=0\;\Rightarrow\;\varphi(x)=\psi_s-(\varphi_m-\psi_s)\,\frac{x}{t_{ox}}\quad(-t_{ox}\le x\le0)\]
+即电势线性分布；金属为等势体 $\varphi(-t_{ox})=\varphi_m$（$\varphi_m$ 的取值在 §4 由栅压约束定出）。氧化层电场为常数
+% [eq:s3eox] [inline] [section:三、泊松方程与边界条件]
+\(E_{ox}=-d\varphi/dx=(\varphi_m-\psi_s)/t_{ox}\)。
+
+\textbf{边界 2（界面位移场连续，无界面电荷）}：电位移法向分量连续
+% [eq:s3dcont] [display] [section:三、泊松方程与边界条件]
+\[\varepsilon_{ox}\,E_{ox}=\varepsilon_{si}\,E_s(0^+),\qquad E_s(x)\equiv-\frac{d\psi}{dx}\]
+以表面两节点 $\psi_0=\psi(0)$、$\psi_1=\psi(h)$ 离散 $E_s(0^+)\approx(\psi_0-\psi_1)/h$，得 Robin 边界
+% [eq:s3robin] [display] [section:三、泊松方程与边界条件]
+\[\psi_0-\psi_1=h\,\frac{\varepsilon_{ox}}{\varepsilon_{si}}\,\frac{\varphi_m-\psi_s}{t_{ox}}\]
+
+\subsection{界面势垒与真空能级（图 1 显示用，不进入泊松求解）}
+电子亲和能与氧化层带隙取
+% [eq:s3chi] [display] [section:三、泊松方程与边界条件]
+\[\chi_{si}=4.05\,\mathrm{eV},\qquad \chi_{ox}=0.9\,\mathrm{eV},\qquad E_g^{ox}=9.0\,\mathrm{eV}\]
+真空能级（图中细灰线，始终绘制）：半导体区
+% [eq:s3evac] [display] [section:三、泊松方程与边界条件]
+\[E_{vac}(x)=E_c(x)+\chi_{si}=\psi_F-\psi(x)+\frac{E_g}{2}+\chi_{si}\quad(x\ge0)\]
+金属区 $E_{vac}^m=E_F^m+\Phi_m$，金属功函数 $\Phi_m$ 由半导体功函数 $\Phi_s$ 与平带电压联系：
+% [eq:s3evacm] [display] [section:三、泊松方程与边界条件]
+\[E_{vac}^{m}=E_F^m+\Phi_m,\qquad \Phi_m=\Phi_s+V_{FB},\qquad \Phi_s=\chi_{si}+\frac{E_g}{2}+\psi_F\]
+氧化层示意段线性连接。可验证平衡（$V_G-V_B=V_{FB}$）时 $E_{vac}$ 全程为常数 $\Phi_s$（数值残差 $<10^{-9}\,\mathrm{eV}$）。氧化层带边
+% [eq:s3oxband] [display] [section:三、泊松方程与边界条件]
+\[E_{c,ox}=E_{vac}-\chi_{ox},\qquad E_{v,ox}=E_{vac}-\chi_{ox}-E_g^{ox}\]
+随氧化层电场倾斜；界面处本征偏移
+% [eq:s3delta] [display] [section:三、泊松方程与边界条件]
+\[\Delta E_c=\chi_{si}-\chi_{ox}=3.15\,\mathrm{eV},\qquad \Delta E_v=(\chi_{ox}+E_g^{ox})-(\chi_{si}+E_g)=4.73\,\mathrm{eV}\]
+偏压下氧化层内无电子态，费米能级无定义，故图 1 氧化层示意段的 $E_F$ 线留空（NaN 分段）；金属示意区内 $E_F^m$ 以下以半透明填充表示占据的连续态（电子海）。
+
+\section{栅压约束的整体推导}
+
+沿外回路从背电极走到栅，外加电压逐项分解为：接触/平带项（接触电势差与固定电荷）、半导体能带弯曲（$\psi_s-\psi(L)$，即表面势）与氧化层压降 $V_{ox}$（$\psi(L)=0$）：
+% [eq:s4chain] [display] [section:四、栅压约束]
+\[V_G-V_B=V_{FB}+\big[\psi_s-\psi(L)\big]+V_{ox}=V_{FB}+\psi_s+V_{ox}\]
+其中氧化层压降
+% [eq:s4vox0] [inline] [section:四、栅压约束]
+\(V_{ox}=\varphi_m-\psi_s\)。移项即得金属静电势（相对衬底体内）：
+% [eq:s4vgp] [display] [section:四、栅压约束]
+\[\varphi_m=V_G'\equiv V_G-V_B-V_{FB}\]
+（代码中 $\varphi_m$ 即 \texttt{VGp}；Robin 边界中的 $\varphi_m$ 由此获得具体数值）。$V_G=V_B=V_{FB}$ 时 $\varphi_m=0$，Robin 条件给出 $\psi_s=0$，即平带，自洽。
+
+联立位移场连续式与 $V_{ox}=E_{ox}t_{ox}$：
+% [eq:s4vox] [display] [section:四、栅压约束]
+\[V_{ox}=E_{ox}\,t_{ox}=\frac{\varepsilon_{si}}{\varepsilon_{ox}}\,E_s(0^+)\,t_{ox}\]
+再由高斯定理（$E(L)=0$，因体内电中性）：
+% [eq:s4gauss] [display] [section:四、栅压约束]
+\[Q_s=\int_0^L\rho\,dx=\varepsilon_{si}\big[E(L)-E_s(0^+)\big]=-\varepsilon_{si}E_s(0^+)\quad [\mathrm{C/cm^2}]\]
+联立以上两式得后处理所用的精确式（无需新增求解，直接由扫描缓存的 $\psi_s$ 计算）：
+% [eq:s4qs] [display] [section:四、栅压约束]
+\[Q_s=-\varepsilon_{ox}\,\frac{V_G'-\psi_s}{t_{ox}}\]
+（多晶硅栅时 $V_G'$ 推广为 $V_{drive}$、$\psi_s$ 与栅侧弯曲分担压降，见下节。）
+
+\section{掺杂多晶硅栅（栅材料切换）}
+
+栅材料可选金属或掺杂多晶硅（n+：施主 $N_D$，p+：受主 $N_A^{(g)}$，掺杂 $10^{18}\sim10^{21}\,\mathrm{cm^{-3}}$，默认 $10^{20}$）。多晶硅即硅，与衬底电子亲和能相同，两侧功函数差完全由费米能级位置差决定。逐步推导：功函数 $\Phi=\chi+(E_c-E_F)/q$（真空能级减费米能级）；衬底侧由第二节约定 $E_c^{sub}-E_F^{sub}=E_g/2+\psi_F$；栅侧用约化能级 $\eta_{n0g}=(E_F^{gate}-E_c^{gate})/kT$ 写成 $E_c^{gate}-E_F^{gate}=-V_t\eta_{n0g}$；$\chi_{si}$ 两侧抵消，得内建功函数差
+% [eq:pgPhims] [display] [section:五、多晶硅栅]
+\[\Phi_{ms}^{auto}=\frac{E_c^{gate}-E_F^{gate}}{q}-\frac{E_c^{sub}-E_F^{sub}}{q}=-V_t\,\eta_{n0g}-\left(\frac{E_g}{2}+\psi_F\right)\]
+其中 $\eta_{n0g}$ 由栅侧中性条件二分求解（与衬底同式，掺杂符号相反）：
+% [eq:pgNeutral] [display] [section:五、多晶硅栅]
+\[N_c F_{1/2}(\eta_{n0g})-N_v F_{1/2}(\eta_{p0g})+\mathrm{dop}_g=0,\qquad \eta_{p0g}=-\eta_{n0g}-\frac{E_g}{V_t},\qquad \mathrm{dop}_g=\begin{cases}-N_D,&n^+\\+N_A^{(g)},&p^+\end{cases}\]
+（参考值：n+/1e20 对 p 衬底 1e16 时 $\Phi_{ms}^{auto}\approx-1.00\,\mathrm{V}$；p+/1e20 约 $+0.32\,\mathrm{V}$——Fermi-Dirac 简并使 p+ 偏离 Boltzmann 估计 $+0.18\,\mathrm{V}$。）驱动电压与有效平带：
+% [eq:pgVdrive] [display] [section:五、多晶硅栅]
+\[V_{drive}=(V_G-V_B)-(V_{FB}+\Phi_{ms}^{auto}),\qquad V_{FB,eff}=V_{FB}+\Phi_{ms}^{auto}\]
+两侧能带均平（平带）当且仅当 $V_{drive}=0$，即 $V_G-V_B=V_{FB,eff}$；用户输入的 $V_{FB}$ 作为附加偏移叠加在自动内建值之上。
+
+\subsection{统一三层泊松}
+x 轴延伸为三层：多晶硅 $[-t_{ox}-L_g,-t_{ox})$、氧化层 $[-t_{ox},0]$、衬底 $(0,L]$，同一牛顿系统，双 Dirichlet 边界：
+% [eq:pgBC] [display] [section:五、多晶硅栅]
+\[\psi(-t_{ox}-L_g)=V_{drive},\qquad \psi(L)=0\]
+多晶侧载流子以自身体参考 $\psi=V_{drive}$ 计（
+% [eq:pgU] [inline] [section:五、多晶硅栅]
+\(u_g=(\psi-V_{drive})/V_t\)）：
+% [eq:pgRho] [display] [section:五、多晶硅栅]
+\[n=N_c F_{1/2}(\eta_{n0g}+u_g),\qquad p=N_v F_{1/2}(\eta_{p0g}-u_g),\qquad \rho=q\,(p-n-\mathrm{dop}_g)\]
+氧化层 $\rho=0$。控制体积守恒离散（界面节点两侧半格加权，位移场连续自动满足）：
+% [eq:pgFV] [display] [section:五、多晶硅栅]
+\[\frac{1}{w_i}\left(\varepsilon_{i+1/2}\frac{\psi_{i+1}-\psi_i}{h_+}-\varepsilon_{i-1/2}\frac{\psi_i-\psi_{i-1}}{h_-}\right)+\rho_i=0,\qquad w_i=\frac{h_-+h_+}{2}\]
+两个界面均为细格（同“数值求解步骤”一节规则）向外几何增长；多晶深度
+% [eq:pgLg] [inline] [section:五、多晶硅栅]
+\(L_g\approx 6\max(W_{max}^{gate},\,3L_D^{gate})\)（限幅 10~200nm）。该形式下离散高斯定理逐位成立：每层电荷总量与端面通量严格相消（实测 $Q_{poly}+Q_{sub}$ 绝对残差约 $10^{-14}\,\mathrm{C/cm^2}$）。
+
+\subsection{栅耗尽与串联电容分解}
+栅压降分解扩展为三段。定义栅能带弯曲
+% [eq:pgPsig] [inline] [section:五、多晶硅栅]
+\(\psi_g=\psi(-t_{ox})-V_{drive}\)（注意 n+ 栅在正偏下 $\psi_g<0$，其压降贡献为 $-\psi_g$），则
+% [eq:pgChain] [display] [section:五、多晶硅栅]
+\[V_{drive}=\psi_s+V_{ox}-\psi_g\]
+两侧对 $-Q_s$ 求导（链式法则，逐段压降各管一段）：
+% [eq:pgSeries] [display] [section:五、多晶硅栅]
+\[\frac{1}{C}=-\frac{dV_{drive}}{dQ_s}=-\frac{d\psi_s}{dQ_s}-\frac{dV_{ox}}{dQ_s}+\frac{d\psi_g}{dQ_s}=\frac{1}{C_s}+\frac{1}{C_{ox}}+\frac{1}{C_{poly}},\qquad C_{poly}=\frac{dQ_s}{d\psi_g}\]
+栅耗尽效应：强反型时多晶侧亦耗尽（$|\psi_g|$ 随 $|V_{drive}|$ 增大），$C_{poly}$ 有限，C–V 强反型端不再完全回到 $C_{ox}$（实测 n+/1e20 时约 $0.95\,C_{ox}$），$V_T$ 相应偏移。金属栅为退化情形（$C_{poly}=\infty$），回到两项串联。
+
+\section{数值求解步骤}
+
+\textbf{渐变网格}：反型/积累层厚度约 $V_t/E_s$（亚纳米级），且电子/耗尽电荷的划分精度随表面格距线性收敛，故界面处用细密均匀格、体内几何加密：
+% [eq:s5grid] [display] [section:五、数值求解]
+\[h_1=\min\big(0.05\,\mathrm{nm},\ 0.05\,V_t/E_{est}\big),\qquad x_{i+1}-x_i=1.05\,(x_i-x_{i-1})\]
+共约 300$\sim$500 节点（$E_{est}$ 为按最坏偏压估计的表面场强）。
+
+\textbf{牛顿线性化}：非均匀网格上的离散残差
+% [eq:s5res] [display] [section:五、数值求解]
+\[F_i=\frac{2}{h_-+h_+}\left(\frac{\psi_{i+1}-\psi_i}{h_+}-\frac{\psi_i-\psi_{i-1}}{h_-}\right)+\frac{\rho(\psi_i)}{\varepsilon_{si}}=0\]
+（$h_-=x_i-x_{i-1}$，$h_+=x_{i+1}-x_i$）。电荷对电势的导数用
+% [eq:s5f12d] [inline] [section:五、数值求解]
+\(dF_{1/2}/d\eta=F_{-1/2}\) 得
+% [eq:s5drho] [display] [section:五、数值求解]
+\[\frac{d\rho}{d\psi}=-\frac{q}{V_t}\left[N_vF_{-1/2}\!\left(\eta_{p0}-\frac{\psi}{V_t}\right)+N_cF_{-1/2}\!\left(\eta_{n0}+\frac{\psi}{V_t}\right)\right]\]
+Jacobian 为三对角矩阵，Thomas 算法 $O(N)$ 求解修正量；阻尼牛顿单步限幅
+% [eq:s5damp] [inline] [section:五、数值求解]
+\(\max|\Delta\psi|\le 1\,\mathrm{V}\)，收敛判据
+% [eq:s5conv] [inline] [section:五、数值求解]
+\(\max|\Delta\psi|<10^{-6}\,\mathrm{V}\)。
+
+\textbf{$F_{\pm1/2}$ 查表}：启动时以 $t=u^2$ 替换消去 $t^{-1/2}$ 奇点后梯形积分建表（$\eta\in[-40,12]$，4096 点，线性插值）；表外渐近：
+% [eq:s5asym] [display] [section:五、数值求解]
+\[F_{\pm1/2}\approx e^{\eta}\ (\eta<-40);\qquad F_{1/2}\approx\frac{4}{3\sqrt{\pi}}\left(\eta^2+\frac{\pi^2}{6}\right)^{3/4},\quad F_{-1/2}\approx\frac{2}{\sqrt{\pi}}\left(\eta^2+\frac{\pi^2}{6}\right)^{1/4}\ (\eta>12)\]
+
+\textbf{扫描}：$V_G$ 自 $-3\,\mathrm{V}$ 到 $+3\,\mathrm{V}$ 共 121 点；先解 $V_G=0$，以其解为初值向 $+3\,\mathrm{V}$ 步进，再从 $0$ 的解向 $-3\,\mathrm{V}$ 步进（warm-start）。分片异步执行，界面有进度条，计算期间再次点击“更新”即中止并按最新参数重启。
+
+\section{后处理物理量}
+
+\textbf{电子面密度}
+% [eq:s6ns] [display] [section:六、后处理物理量]
+\[N_s=\int_0^L n(x)\,dx\quad [\mathrm{cm^{-2}}]\]
+反型层内 $n$ 近似指数衰减，故分段用指数假设精确积分（对数梯形）：
+% [eq:s6logint] [display] [section:六、后处理物理量]
+\[\int_{x_i}^{x_{i+1}}n\,dx\approx\frac{n_i-n_{i+1}}{\ln n_i-\ln n_{i+1}}\,(x_{i+1}-x_i)\]
+（$\ln$ 比小于 $10^{-3}$ 时退化为普通梯形）。
+
+\textbf{微分电容}：电子分量
+% [eq:s6cn] [display] [section:六、后处理物理量]
+\[C_n=\frac{d\,(q\,N_s)}{d\,V_G}\quad [\mathrm{F/cm^2}]\]
+总微分电容
+% [eq:s6c] [display] [section:六、后处理物理量]
+\[C=-\frac{d\,Q_s}{d\,V_G}\quad [\mathrm{F/cm^2}]\]
+均由扫描缓存中心差分（端点单侧）加 5 点滑动平均、非负钳制得到。
+
+\textbf{串联关系推导}（不跳步）：由 §4 的
+% [eq:s6step1] [display] [section:六、后处理物理量]
+\[V_G'=\psi_s+V_{ox},\qquad C_{ox}V_{ox}=-Q_s\]
+两边对 $\psi_s$ 求导（注意 $Q_s$ 是 $\psi_s$ 的函数）：
+% [eq:s6step2] [display] [section:六、后处理物理量]
+\[\frac{dV_G'}{d\psi_s}=1+\frac{dV_{ox}}{d\psi_s}=1-\frac{1}{C_{ox}}\frac{dQ_s}{d\psi_s}=1+\frac{C_s}{C_{ox}}\]
+其中半导体微分电容
+% [eq:s6cs] [inline] [section:六、后处理物理量]
+\(C_s=-dQ_s/d\psi_s\)。于是（$V_{FB}$、$V_B$ 为常数，$dV_G/dV_G'=1$）
+% [eq:s6step3] [display] [section:六、后处理物理量]
+\[C=-\frac{dQ_s}{dV_G'}=-\frac{dQ_s/d\psi_s}{dV_G'/d\psi_s}=\frac{C_s}{1+C_s/C_{ox}}\;\Longrightarrow\;\frac{1}{C}=\frac{1}{C_{ox}}+\frac{1}{C_s}\]
+即氧化层电容与半导体电容串联；多晶硅栅时扩展为多晶/氧化层/衬底三项串联，见“掺杂多晶硅栅”一节。
+
+\textbf{低频（准静态）C–V 的物理解释}：本模型为热平衡解。积累区（$V_G$ 很负）表面空穴随 $V_G$ 即时响应，$C_s\gg C_{ox}$，$C\to C_{ox}$；耗尽区 $C_s\approx\varepsilon_{si}/W<C_{ox}$，$C$ 下降，最小值估算（忽略反型电荷贡献）
+% [eq:s6cmin] [display] [section:六、后处理物理量]
+\[\frac{C_{min}}{C_{ox}}\approx\left(1+\frac{C_{ox}W_{max}}{\varepsilon_{si}}\right)^{-1}\]
+强反型区反型电荷在准静态下能跟随 $V_G$（少数载流子产生足够快），$C_s$ 再度远大于 $C_{ox}$，$C$ 回升至 $C_{ox}$——与高频 C–V（反型电荷跟不上，$C$ 停在 $C_{min}$ 附近）相区别。
+
+\textbf{积分电流（Pao-Sah 电荷积分）}：缓变沟道近似下，沟道 $x$ 处单位面积反型电荷
+% [eq:psQd0] [inline] [section:六、后处理物理量]
+\(Q_d(x)=q\,N_s(x)\)，漂移电流（迁移率模型）为
+% [eq:psDrift] [display] [section:六、后处理物理量]
+\[Q_d(x)=q\,N_s(x),\qquad I_D=W\,\mu_n\,Q_d(x)\,\frac{dV}{dx}\]
+稳态下
+% [eq:psID] [inline] [section:六、后处理物理量]
+\(I_D\) 沿沟道恒定，上式两侧对 $x$ 自源 $(0)$ 到漏 $(L)$ 积分：
+% [eq:psInt] [display] [section:六、后处理物理量]
+\[I_D\,L=\mu_n\,W\int_{V_S}^{V_D} Q_d(V)\,dV\quad\text{(Pao--Sah)}\]
+因此
+% [eq:psQdV] [inline] [section:六、后处理物理量]
+\(\int Q_d\,dV\) 正比于漏电流——这正是 Pao-Sah 电荷积分的核心。本页的 MOS 电容扫描以栅压
+% [eq:psVG] [inline] [section:六、后处理物理量]
+\(V_G\) 为积分变量，取
+% [eq:psW1] [inline] [section:六、后处理物理量]
+\(W=L=\mu_n=1\) 归一化：
+% [eq:psNorm] [display] [section:六、后处理物理量]
+\[S(V_G)=\int_{-3\,\mathrm{V}}^{V_G} Q_d(V')\,dV',\qquad \tilde{S}=\frac{S}{q\,V_t},\qquad W=L=\mu_n=1\]
+适用条件：稳态漂移、忽略扩散分量的近似。对应到本页扫描（
+% [eq:psQdB] [inline] [section:六、后处理物理量]
+\(Q_d=q\,N_s\) 由扫描缓存给出）：页面显示换算
+% [eq:Stilde] [inline] [section:六、后处理物理量]
+\(\tilde{S}=S/(q\,V_t)\)，量纲 cm$^{-2}$，与
+% [eq:NsB] [inline] [section:六、后处理物理量]
+\(N_s\) 共用左轴；
+% [eq:Sm0] [inline] [section:六、后处理物理量]
+\(S(-3\,\mathrm{V})=0\) 处对数轴做下界钳制。
+% [eq:paosah] [display] [section:六、后处理物理量]
+\[I_D\cdot L=\mu_n\int_{-3\,\mathrm{V}}^{V_G} Q_d(V)\,dV,\qquad Q_d=q\,N_s\]
+
+\section{工作区判定与阈值电压}
+
+阈值判据 $\psi_s=2\psi_F$ 的物理来源：Boltzmann 近似下
+% [eq:s7n0] [display] [section:七、工作区判定]
+\[n(\psi_s)=n_0\,e^{\psi_s/V_t},\qquad n_0=N_c e^{\eta_{n0}}=\frac{n_i^2}{N_A}\]
+当 $\psi_s=2\psi_F$（Boltzmann 下 $\psi_F=V_t\ln(N_A/n_i)$）：
+% [eq:s7thr] [display] [section:七、工作区判定]
+\[\psi_s=2\psi_F\;\Rightarrow\;n(\psi_s)=\frac{n_i^2}{N_A}\,e^{2\psi_F/V_t}=\frac{n_i^2}{N_A}\cdot\frac{N_A^2}{n_i^2}=N_A\]
+即表面电子浓度等于体内空穴（掺杂）浓度，反型程度达到体内 p 型程度——定义为阈值
+% [eq:s7vt] [inline] [section:七、工作区判定]
+\(V_T\)（由扫描数据按 $\psi_s=2\psi_F$ 插值得到）。
+
+五个工作区按 $\psi_s$ 划分（p 型）：
+\begin{center}
+\begin{tabular}{ll}
+积累 & % [eq:condAcc] [inline] [section:七、工作区判定]
+\(\psi_s<-2V_t\) \\
+平带附近 & % [eq:condFlat] [inline] [section:七、工作区判定]
+\(|\psi_s|\le 2V_t\) \\
+耗尽 & % [eq:condDep] [inline] [section:七、工作区判定]
+\(2V_t<\psi_s\le\psi_F\) \\
+弱反型 & % [eq:condWeak] [inline] [section:七、工作区判定]
+\(\psi_F<\psi_s<2\psi_F\) \\
+强反型 & % [eq:condStrong] [inline] [section:七、工作区判定]
+\(\psi_s\ge 2\psi_F\) \\
+\end{tabular}
+\end{center}
+
+\section{近似与适用范围}
+
+第一节每条假设对应的失效场景：
+\begin{itemize}
+  \item 量子限域：强反型/积累层厚亚纳米，二维电子气子带使电荷质心偏离界面，经典 $N_s$ 与电容有百分之几到十几的偏差；
+  \item 深耗尽：快速扫描或少数载流子产生受限时反型层来不及建立，$\psi_s$ 可超过 $2\psi_F$ 继续下探，本平衡解不适用；
+  \item 界面态与 $Q_f$：被打包进 $V_{FB}$，无法表现其随 $\psi_s$ 变化造成的 C–V 拉伸畸变；
+  \item 隧穿漏电流：% [eq:s8tox] [inline] [section:八、近似与适用]
+  \(t_{ox}\lesssim 2\,\mathrm{nm}\) 时栅漏不可忽略，热平衡假设破坏；
+  \item 简并重掺杂：Fermi-Dirac 统计已覆盖载流子简并，但缺少带隙变窄等量子修正；
+  \item 雪崩/击穿未建模：$t_{ox}=1\,\mathrm{nm}$ 且 $|V_G|=3\,\mathrm{V}$ 时氧化层场已超物理击穿场强，程序仍给出数学解。
+\end{itemize}
+
+\end{document}

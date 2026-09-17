@@ -1,0 +1,247 @@
+% ============================================================================
+% model-doc-pn.tex —— pn.html “模型介绍”面板的完整推导文稿（公式唯一源）
+%
+% 本文件可独立编译（xelatex，ctexart 支持中文）。同时它是 pn.html 中
+% <!-- MODEL-DOC-BEGIN --> ... <!-- MODEL-DOC-END --> 段全部公式的源：
+% 面板与该段内容同源，公式以 MathJax v3（tex2svg）预渲染为内联 SVG。
+%
+% 条目格式（两行一组，供渲染脚本解析）：
+%   % [eq:唯一名字] [inline|display] [section:小节]
+%   \(...\) 或 \[...\]        ← TeX 源码；渲染时去掉定界符，display 旗标按条目类型
+%
+% 修改 / 新增公式流程：
+%   1. 编辑本文件（保持 % [eq:名字] 标签全局唯一）；同步修改 HTML 面板文字；
+%   2. 临时工作区（勿放项目目录）：mkdir tmp && cd tmp && npm init -y && npm install mathjax@3
+%   3. node 渲染：require('mathjax').init({loader:{load:['input/tex','output/svg']}})
+%      .then(M => M.startup.adaptor.outerHTML(M.tex2svg(TEX源码, {display:布尔})))
+%   4. 内部 id 前缀：本文件首批次使用 MJXPN-（把 tex2svg 输出中的 'MJX-' 全部
+%      替换为 'MJXPN-' 再注入）；后续批次用 MJXPNB-、MJXPNC- 依字母顺延。
+%   5. 删除临时工作区。项目目录只保留 index.html、model-doc.tex、pn.html、本文件。
+% ============================================================================
+\documentclass[11pt]{ctexart}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\geometry{a4paper,margin=2.5cm}
+\title{PN 结一维漂移-扩散仿真：物理模型与数值方法完整推导}
+\author{pn.html 模型介绍面板源文稿}
+\date{}
+\begin{document}
+\maketitle
+
+\noindent 本文与 \texttt{pn.html} 的仿真实现逐一对应。单位制：长度 cm、电势 V、浓度 cm$^{-3}$、电流密度 A/cm$^2$。
+常数（$T=300\,\mathrm{K}$）：
+% [eq:constQ] [inline] [section:二、载流子统计]
+\(q=1.602\times10^{-19}\,\mathrm{C}\)，
+% [eq:constVt] [inline] [section:二、载流子统计]
+\(V_t=kT/q=25.85\,\mathrm{mV}\)，
+% [eq:constEpsi] [inline] [section:二、载流子统计]
+\(\varepsilon_{si}=11.7\,\varepsilon_0\)（$\varepsilon_0=8.854\times10^{-14}\,\mathrm{F/cm}$），
+% [eq:constNi] [inline] [section:二、载流子统计]
+\(n_i=1.0\times10^{10}\,\mathrm{cm^{-3}}\)，
+% [eq:constEg] [inline] [section:二、载流子统计]
+\(E_g=1.12\,\mathrm{eV}\)，
+% [eq:constNc] [inline] [section:二、载流子统计]
+\(N_c=2.8\times10^{19}\,\mathrm{cm^{-3}}\)，
+% [eq:constNv] [inline] [section:二、载流子统计]
+\(N_v=1.04\times10^{19}\,\mathrm{cm^{-3}}\)，
+% [eq:constMun] [inline] [section:三、漂移-扩散方程]
+\(\mu_n=1350\,\mathrm{cm^2/Vs}\)，
+% [eq:constMup] [inline] [section:三、漂移-扩散方程]
+\(\mu_p=480\,\mathrm{cm^2/Vs}\)。
+
+\section{物理设定与基本假设}
+
+\subsection{结构与坐标}
+一维突变 PN 结，冶金结位于 $x=0$：
+% [eq:s1coord] [display] [section:一、物理设定]
+\[\mathrm{p}^-\ ( -L_p\le x<0,\ \text{受主}\ N_A\ )\quad\Big|\quad \mathrm{n}^-\ ( 0<x\le L_n,\ \text{施主}\ N_D\ )\]
+两端为理想欧姆接触。外加电压 $V$ 定义在 n 端接触相对 p 端接触的电势差，$V>0$ 为正偏（p 端正、n 端负）。
+仿真默认 $N_A=10^{16}\,\mathrm{cm^{-3}}$、$N_D=10^{17}\,\mathrm{cm^{-3}}$、$\tau_n=\tau_p=1\,\mu\mathrm{s}$，偏压扫描 $-5\,\mathrm{V}\sim+1\,\mathrm{V}$。
+
+\subsection{基本假设}
+\begin{enumerate}
+\item \textbf{稳态}：$\partial/\partial t=0$，求解给定 $V$ 下的定常态；电容为准静态（增量）定义。
+\item \textbf{非简并统计}：载流子服从 Boltzmann 分布（掺杂 $\lesssim 10^{18}\,\mathrm{cm^{-3}}$ 时成立）。
+\item \textbf{杂质全电离}：$N_A^- = N_A$，$N_D^+ = N_D$。
+\item \textbf{恒定迁移率}：$\mu_n,\mu_p$ 与电场、掺杂无关（低场近似）。
+\item \textbf{唯一产生-复合机制}：单能级 SRH（Shockley-Read-Hall）复合，寿命 $\tau_n,\tau_p$ 为常数。
+\item \textbf{排除}：隧穿（齐纳）、雪崩倍增、俄歇复合、串联电阻、表面效应、温度梯度。
+\end{enumerate}
+
+\subsection{未知量与参考点}
+逐点求解三个未知量：静电势
+% [eq:s1psi] [inline] [section:一、物理设定]
+\(\psi(x)\)（单位 V，能带 $E_{c,v}(x)=E_{c,v}^{(0)}-q\psi(x)$ 随其弯曲），以及电子、空穴的拟费米势
+% [eq:s1phin] [inline] [section:一、物理设定]
+\(\varphi_n(x),\ \varphi_p(x)\)（单位 V；$E_{Fn}=-q\varphi_n$ 即拟费米能级）。参考点：平衡 p 区体内部的费米能级为零点。
+
+\section{载流子统计与热平衡}
+
+非简并假设下，载流子浓度用 Boltzmann 分布写出。把导带边随静电势的弯曲与拟费米势分离：
+% [eq:s2n] [display] [section:二、载流子统计]
+\[n(x)=n_i\,\exp\!\frac{\psi(x)-\varphi_n(x)}{V_t},\qquad p(x)=n_i\,\exp\!\frac{\varphi_p(x)-\psi(x)}{V_t}\]
+该定义自动满足平衡态要求：$\varphi_n=\varphi_p=0$ 时
+% [eq:s2np0] [display] [section:二、载流子统计]
+\[n_0(x)=n_i\,e^{\psi/V_t},\qquad p_0(x)=n_i\,e^{-\psi/V_t},\qquad n_0 p_0=n_i^2\]
+
+\textbf{中性区边界值。}在 p 区远端电中性 $p_0-n_0-N_A=0$ 且 $n_0p_0=n_i^2$，得 $p_0=N_A$，于是
+% [eq:s2psiL] [display] [section:二、载流子统计]
+\[\psi(-L_p)=-\psi_{Fp},\qquad \psi_{Fp}=V_t\ln\frac{N_A}{n_i}\]
+同理在 n 区远端
+% [eq:s2psiR] [display] [section:二、载流子统计]
+\[\psi(L_n)=+\psi_{Fn},\qquad \psi_{Fn}=V_t\ln\frac{N_D}{n_i}\]
+
+\textbf{内建电势。}平衡时费米能级处处平坦（无电流），两侧静电势差即内建电势
+% [eq:s2vbi] [display] [section:二、载流子统计]
+\[V_{bi}=\psi(L_n)-\psi(-L_p)=\psi_{Fn}+\psi_{Fp}=V_t\ln\frac{N_A N_D}{n_i^2}\]
+默认参数 $V_{bi}=0.774\,\mathrm{V}$。
+
+\section{漂移-扩散输运方程}
+
+载流子电流由漂移（电场驱动）与扩散（浓度梯度驱动）两部分组成：
+% [eq:s3jn] [display] [section:三、漂移-扩散方程]
+\[J_n=q\mu_n n E+q D_n\frac{dn}{dx},\qquad J_p=q\mu_p p E-q D_p\frac{dp}{dx}\]
+其中 $E=-d\psi/dx$，扩散系数由 Einstein 关系与迁移率联系：
+% [eq:s3ein] [display] [section:三、漂移-扩散方程]
+\[D_n=\mu_n V_t,\qquad D_p=\mu_p V_t\]
+（Einstein 关系本身要求非简并统计，与第二节假设一致。）
+
+\textbf{拟费米势形式。}把 $n=n_i e^{(\psi-\varphi_n)/V_t}$ 对 $x$ 求导：
+% [eq:s3dndx] [display] [section:三、漂移-扩散方程]
+\[\frac{dn}{dx}=\frac{n}{V_t}\left(\frac{d\psi}{dx}-\frac{d\varphi_n}{dx}\right)\]
+代入 $J_n=q\mu_n V_t\, dn/dx-q\mu_n n\, d\psi/dx$，含 $d\psi/dx$ 的两项精确相消：
+% [eq:s3jnqf] [display] [section:三、漂移-扩散方程]
+\[J_n=-q\mu_n n\,\frac{d\varphi_n}{dx},\qquad J_p=-q\mu_p p\,\frac{d\varphi_p}{dx}\]
+物理含义：电流只由\textbf{拟费米能级的梯度}驱动；$\varphi_n,\varphi_p$ 平坦 ⇔ 无电流。平衡态（$\varphi_n=\varphi_p=\mathrm{const}$）因此自动满足零电流。偏压下 $\varphi_n,\varphi_p$ 分裂并在中性区近似线性下降。
+
+静电势由 Poisson 方程闭合：
+% [eq:s3poisson] [display] [section:三、漂移-扩散方程]
+\[\frac{d^2\psi}{dx^2}=-\frac{\rho}{\varepsilon_{si}},\qquad \rho=q\,(p-n+N_D-N_A)\]
+
+\section{连续性方程与 SRH 复合}
+
+稳态下电子、空穴数各自守恒（产生-复合作为源汇）：
+% [eq:s4cont] [display] [section:四、连续性与 SRH]
+\[\frac{dJ_n}{dx}=q\,R,\qquad \frac{dJ_p}{dx}=-q\,R\]
+两式相加得 $d(J_n+J_p)/dx=0$：\textbf{总电流密度 $J=J_n+J_p$ 处处相等}。这一性质同时是数值解的严格守恒检验。
+
+SRH 通过禁带中单能级陷阱（能级取本征费米能级 $E_i$，俘获截面相同）的净复合率为
+% [eq:s4srh] [display] [section:四、连续性与 SRH]
+\[R=\frac{np-n_i^2}{\tau_p\,(n+n_i)+\tau_n\,(p+n_i)}\]
+分子即质量作用偏离 $np-n_i^2$；平衡时 $np=n_i^2$ 故 $R=0$。两个极限：中性区小注入（如 p 区 $p\simeq N_A$，$n\ll N_A$）退化为
+% [eq:s4srhlim] [display] [section:四、连续性与 SRH]
+\[R\simeq\frac{n-n_{p0}}{\tau_n}\qquad(\text{p 区}),\qquad R\simeq\frac{p-p_{n0}}{\tau_p}\qquad(\text{n 区})\]
+即少子寿命意义；耗尽区中 $n,p\ll n_i$ 时 $R<0$（净产生），$R\simeq -n_i/(\tau_n+\tau_p)$，给出反偏产生电流。
+
+\section{Scharfetter-Gummel 离散与边界条件}
+
+\subsection{一维指数拟合格式}
+在节点 $i$ 与 $i+1$ 之间的边上，假设 $J_n$ 恒定、$\psi$ 线性变化（$\Delta=(\psi_{i+1}-\psi_i)/V_t$ 为常数）。此时电子电流方程
+% [eq:s5ode] [display] [section:五、SG 离散与边界]
+\[\frac{dn}{dx}-\frac{\Delta}{h}\,n=\frac{J_n}{qD_n}\qquad(h=x_{i+1}-x_i)\]
+是关于 $n$ 的常系数线性 ODE，可用端点值 $n_i,n_{i+1}$ 精确解出 $J_n$：
+% [eq:s5sg] [display] [section:五、SG 离散与边界]
+\[J_{n,\,i+1/2}=\frac{qD_n}{h}\Big[B(\Delta)\,n_{i+1}-B(-\Delta)\,n_i\Big],\qquad B(z)=\frac{z}{e^z-1}\]
+$B(z)$ 即 Bernoulli 函数。空穴同理：
+% [eq:s5sgp] [display] [section:五、SG 离散与边界]
+\[J_{p,\,i+1/2}=\frac{qD_p}{h}\Big[B(\Delta)\,p_i-B(-\Delta)\,p_{i+1}\Big]\]
+该格式在 $|\Delta|$ 任意大时均稳定：$\Delta\to0$ 退化为中心差分，$|\Delta|\to\infty$ 退化为迎风格式，且平衡解（$n_{i+1}=n_i e^{\Delta}$）精确给出零电流。
+
+\subsection{数值稳定的拟费米（Slotboom）形式}
+直接按上式求值，在漂移与扩散近乎相消（近平衡、小电流）处发生大数相消。利用 $B(\Delta)/B(-\Delta)=e^{-\Delta}$ 与 $n_{i+1}/n_i=e^{(a_{i+1}-a_i)}$（$a_i=(\psi_i-\varphi_{n,i})/V_t$）可把两通项合并为对拟费米势差的单一 $\operatorname{expm1}$：
+% [eq:s5sgqf] [display] [section:五、SG 离散与边界]
+\[J_{n,\,i+1/2}=\frac{qD_n}{h}\,B(-\Delta)\,n_i\,\operatorname{expm1}\!\frac{\varphi_{n,i}-\varphi_{n,i+1}}{V_t}
+=-\frac{qD_n}{h}\,B(\Delta)\,n_{i+1}\,\operatorname{expm1}\!\frac{\varphi_{n,i+1}-\varphi_{n,i}}{V_t}\]
+% [eq:s5sgqfp] [display] [section:五、SG 离散与边界]
+\[J_{p,\,i+1/2}=\frac{qD_p}{h}\,B(-\Delta)\,p_{i+1}\,\operatorname{expm1}\!\frac{\varphi_{p,i}-\varphi_{p,i+1}}{V_t}
+=-\frac{qD_p}{h}\,B(\Delta)\,p_i\,\operatorname{expm1}\!\frac{\varphi_{p,i+1}-\varphi_{p,i}}{V_t}\]
+（实现按端点浓度大小选取两种等价形式之一，避免 $B\cdot n$ 溢出。）拟费米势差在器件内至多 $O(V)$，$\operatorname{expm1}$ 求值全程无相消；$\varphi$ 平坦时严格给出 $J=0$。
+
+\subsection{边界条件（欧姆接触）}
+欧姆接触假设：接触处热平衡（$\varphi_n=\varphi_p=$ 该端费米势）且电中性（$\rho=0$）。p 端为参考：
+% [eq:s5bcl] [display] [section:五、SG 离散与边界]
+\[\psi(-L_p)=-\psi_{Fp},\qquad \varphi_n(-L_p)=\varphi_p(-L_p)=0\]
+n 端加上外压 $V$（费米势整体移动 $-V$，能带相对下移 $qV$）：
+% [eq:s5bcr] [display] [section:五、SG 离散与边界]
+\[\psi(L_n)=\psi_{Fn}-V,\qquad \varphi_n(L_n)=\varphi_p(L_n)=-V\]
+均为 Dirichlet 条件，直接钉扎边界节点的三个未知量。
+
+\section{平衡态解：内建电势与耗尽近似}
+
+$V=0$ 时 $\varphi_n=\varphi_p=0$，只剩 Poisson 方程（非线性，迭代求解）。耗尽近似给出闭式解：设 $-x_p<x<x_n$ 内载流子完全耗尽，则
+% [eq:s6rho] [display] [section:六、平衡解与耗尽近似]
+\[\rho=\begin{cases}-qN_A,&-x_p<x<0\\ +qN_D,&0<x<x_n\\ 0,&\text{其余（电中性）}\end{cases}\]
+分段积分 Poisson 方程，电场在结处连续、在耗尽边界为零，电势连续且总压降为 $V_{bi}$，再加电荷守恒 $N_A x_p=N_D x_n$，解得
+% [eq:s6w] [display] [section:六、平衡解与耗尽近似]
+\[W=x_n+x_p=\sqrt{\frac{2\varepsilon_{si}V_{bi}}{q}\left(\frac{1}{N_A}+\frac{1}{N_D}\right)},\qquad x_n=\frac{N_A}{N_A+N_D}W,\quad x_p=\frac{N_D}{N_A+N_D}W\]
+% [eq:s6emax] [display] [section:六、平衡解与耗尽近似]
+\[|E_{max}|=\frac{qN_D x_n}{\varepsilon_{si}}=\sqrt{\frac{2qV_{bi}}{\varepsilon_{si}\left(1/N_A+1/N_D\right)}}\]
+外加偏压下势垒高度变为 $V_{bi}-V$（正偏降低、反偏升高），上述各式以 $V_{bi}-V$ 替换 $V_{bi}$ 即得偏压依赖：
+% [eq:s6wv] [display] [section:六、平衡解与耗尽近似]
+\[W(V)=\sqrt{\frac{2\varepsilon_{si}(V_{bi}-V)}{q}\left(\frac{1}{N_A}+\frac{1}{N_D}\right)}\]
+默认参数平衡 $W\simeq0.33\,\mu\mathrm{m}$（仿真用 $|\rho|>0.1\,qN$ 判据读数约 $0.38\,\mu\mathrm{m}$，因真实过渡区非阶跃）。
+
+\section{正偏电流：Shockley 方程的涌现}
+
+\textbf{结定律。}正偏下中性区为多子漂移欧姆区，$\varphi_n,\varphi_p$ 的压降主要发生在扩散区；在耗尽区中近似 $\varphi_n,\varphi_p$ 各自平坦（准平衡），于是耗尽区边界处少子浓度被提升为平衡值的 $e^{V/V_t}$ 倍：
+% [eq:s7law] [display] [section:七、Shockley 涌现]
+\[n_p(-x_p)=n_{p0}\,e^{V/V_t}=\frac{n_i^2}{N_A}e^{V/V_t},\qquad p_n(x_n)=p_{n0}\,e^{V/V_t}=\frac{n_i^2}{N_D}e^{V/V_t}\]
+
+\textbf{扩散区解。}以 p 侧扩散区为例：小注入下 $R=(n-n_{p0})/\tau_n$，且多子电场近似为零，电子纯扩散：
+% [eq:s7diff] [display] [section:七、Shockley 涌现]
+\[D_n\frac{d^2(n-n_{p0})}{dx^2}=\frac{n-n_{p0}}{\tau_n}\quad\Longrightarrow\quad n-n_{p0}\propto e^{(x+x_p)/L_n},\quad L_n=\sqrt{D_n\tau_n}\]
+长基区（$L_p\gg L_n$，仿真域取 $\ge 3L_n$ 保证）下，扩散电流在结边界处为
+% [eq:s7jndiff] [display] [section:七、Shockley 涌现]
+\[J_n(-x_p)=\frac{qD_n n_{p0}}{L_n}\left(e^{V/V_t}-1\right)\]
+n 侧同理。耗尽区内忽略复合（薄耗尽近似）则 $J$ 连续，得 Shockley 理想二极管方程
+% [eq:s7shockley] [display] [section:七、Shockley 涌现]
+\[J=J_s\left(e^{V/V_t}-1\right),\qquad J_s=q n_i^2\left(\frac{D_n}{L_n N_A}+\frac{D_p}{L_p N_D}\right)\]
+计入耗尽区 SRH 复合后，$J\propto e^{V/(n_{id}V_t)}$，理想因子 $n_{id}$ 介于 1（扩散主导）与 2（复合主导）之间——仿真中段 $n_{id}\simeq1.0\sim1.1$（默认寿命下扩散分量占优）。
+
+\textbf{反偏。}$V<0$ 时结定律给出边界少子耗尽，扩散分量饱和于 $-J_s$；同时耗尽区净产生贡献
+% [eq:s7gen] [display] [section:七、Shockley 涌现]
+\[J_{gen}\simeq\frac{q\,n_i\,W(V)}{\tau_{eff}},\qquad \tau_{eff}\sim\tau_n+\tau_p\]
+随 $|V|$ 以 $\sqrt{V_{bi}-V}$ 缓慢增长，无击穿（模型未含雪崩）。
+
+\section{小信号电容：耗尽电容与扩散电容}
+
+PN 结在偏压 $V$ 附近对微扰 $dV$ 的响应是\textbf{增量（微分）电容} $C=dQ/dV$，而非静态比值 $Q/V$。物理上两份独立存储：
+
+\textbf{耗尽电容}：耗尽区宽度随 $V$ 改变，边缘处电离杂质电荷 $Q_{dep}=qN_D x_n=qN_A x_p$ 随之吞吐。由第六节 $W(V)$：
+% [eq:s8cdep] [display] [section:八、C_dep 与 C_diff]
+\[C_{dep}=\left|\frac{dQ_{dep}}{dV}\right|=\frac{\varepsilon_{si}}{W(V)}=\sqrt{\frac{q\,\varepsilon_{si}}{2\,(V_{bi}-V)\left(1/N_A+1/N_D\right)}}\]
+反偏下主导，随 $|V|$ 增大而减小；默认参数零偏 $C_{dep}=3.12\times10^{-8}\,\mathrm{F/cm^2}$（仿真微分读数 $3.13\times10^{-8}$）。
+
+\textbf{扩散电容}：正偏下注入的少子在中性区存储电荷
+% [eq:s8qst] [display] [section:八、C_dep 与 C_diff]
+\[Q_{st}=q\int_{p\text{ 区}}\max(0,\,n-n_{p0})\,dx+q\int_{n\text{ 区}}\max(0,\,p-p_{n0})\,dx,\qquad C_{diff}=\frac{dQ_{st}}{dV}\]
+代入 Shockley 少子分布可得低频极限 $C_{diff}=\dfrac{q}{2V_t}\left(I_n\tau_n+I_p\tau_p\right)$ 量级，随偏压指数增长，正偏下迅速超过 $C_{dep}$。本模型不做小信号展开：直接对扫描所得 $Q_{dep}(V),Q_{st}(V)$ 做中心差分（窗口 5 点平滑）取数值导数，即图 4 的两条曲线。
+
+\section{数值求解流程}
+
+\textbf{网格。}非均匀一维网格：结两侧首格 $h_0=L_D/4$（$L_D=\sqrt{\varepsilon_{si}V_t/(qN)}$ 德拜长度），向外几何增长（倍率 1.12），域长 $\ge\max(3W_{dep}(-5\mathrm{V}),\,3L_{diff})$ 并限幅 $500\,\mu\mathrm{m}$。
+
+\textbf{平衡态。}先以非线性 Poisson（Gummel 迭代 + 比例阻尼，单步 $\le0.3\,\mathrm{V}$）解出 $V=0$ 的 $\psi$。
+
+\textbf{全耦合牛顿。}偏压解以 $(\psi,\varphi_n,\varphi_p)$ 为逐点未知量，三个方程（Poisson、电子连续、空穴连续）的残差 $\mathbf F$ 与解析雅可比（对 $n_i=n_i(\psi_i,\varphi_{n,i})$ 及 Bernoulli 函数逐边求导）组成 $3\times3$ 块三对角系统，块 Thomas 算法 $O(N)$ 求解。关键数值细节：
+\begin{enumerate}
+\item \textbf{行缩放}：Poisson 行（$\sim10^{6}$）与连续性行（$\sim10^{13}$）量级悬殊，每行除以其最大系数后再做块消元，保证 $3\times3$ 块求逆的条件数。
+\item \textbf{比例阻尼}：单步修正限幅 $0.3\,\mathrm{V}$（$\approx12\,V_t$），防止指数非线性振荡。
+\item \textbf{电压延拓 + 自适应二分}：从已知解以小步（$0.05\sim0.1\,\mathrm{V}$）爬向目标电压；牛顿修正爆炸（$>10\,\mathrm{V}$ 或非有限）时回退快照、步长减半重试。
+\item \textbf{收敛判据}：变量步长 $<10^{-9}$ 且行缩放残差 $<10^{-8}$；残差触及双精度噪声层而停滞（修正量 $\lesssim$ 变量 ulp）时判收敛退出。
+\end{enumerate}
+
+\textbf{输出量。}电流由边上的 SG 通量给出；终端电流取全边平均（抑制下述噪声层）；$Q_{dep},Q_{st}$ 按区积分；耗尽边界按 $|\rho|>0.1\,qN_{A,D}$ 判据读出。
+
+\section{近似、适用范围与数值精度边界}
+
+\begin{enumerate}
+\item \textbf{Boltzmann 统计}：掺杂 $\gtrsim10^{18}\,\mathrm{cm^{-3}}$ 进入简并区，需 Fermi-Dirac 统计与带隙变窄，本模型不适用（界面限 $10^{18}$）。
+\item \textbf{恒定迁移率}：高场速度饱和（$|E|\gtrsim10^{4}\,\mathrm{V/cm}$）与掺杂散射被忽略；强反偏峰值场下 $J$ 偏高估。
+\item \textbf{无击穿}：齐纳隧穿（重掺杂）与雪崩倍增（强反偏）缺失，反偏电流只有产生分量，$|V|$ 大时远小于实测。
+\item \textbf{SRH 简化}：单能级、等俘获截面、常数寿命；未含俄歇（高注入）与 SRH 寿命的掺杂依赖。
+\item \textbf{欧姆接触}：真实金属-半导体接触存在肖特基势垒与接触电阻。
+\item \textbf{数值精度}：$(\psi,\varphi)$ 表述在双精度下存在固有噪声层——电流对 $\psi$ 的灵敏度 $\partial J_n/\partial\psi\sim qD_n n/(V_t h)\sim10^{7}\,\mathrm{A/cm^2/V}$，$\psi$ 的一个 ulp（$5\,\mathrm{V}$ 处 $\approx9\times10^{-16}\,\mathrm{V}$）即贡献 $\sim10^{-8}\,\mathrm{A/cm^2}$ 的逐点电流噪声。因此小电流（反偏）下逐点 $J_n(x),J_p(x)$ 有百分之十几抖动（对数坐标下不可见），终端电流用全边平均压至 $\sim1\%$；连续性测试容差相应取 $\max(0.5\%\,|J|,\ 2\times10^{-8}\,\mathrm{A/cm^2})$。彻底消除需改用 Slotboom 变量 $(\psi,u,w)$ 表述。
+\end{enumerate}
+
+\end{document}
