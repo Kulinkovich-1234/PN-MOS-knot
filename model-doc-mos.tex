@@ -1,7 +1,7 @@
 % ============================================================================
-% model-doc.tex —— index.html “模型介绍”面板的完整推导文稿（公式唯一源）
+% model-doc-mos.tex —— mos.html “模型介绍”面板的完整推导文稿（公式唯一源）
 %
-% 本文件可独立编译（xelatex，ctexart 支持中文）。同时它是 index.html 中
+% 本文件可独立编译（xelatex，ctexart 支持中文）。同时它是 mos.html 中
 % <!-- MODEL-DOC-BEGIN --> ... <!-- MODEL-DOC-END --> 段全部公式的源：
 % 面板与该段内容同源，公式以 MathJax v3（tex2svg）预渲染为内联 SVG。
 %
@@ -18,19 +18,19 @@
 %      会话连续编号的 MJX- 前缀；增量批次已用 MJXT-（显示约定增补，7 条）、MJXTB-（多晶硅栅节，11 条），
 %      下一批请用 MJXTC-，之后依字母顺延。
 %      把新 SVG 字符串中的 'MJX-' 全部替换为该批前缀后再注入。
-%   5. 删除临时工作区。项目目录只保留 index.html 与 model-doc.tex。
+%   5. 删除临时工作区。项目目录只保留 mos.html 与 model-doc-mos.tex。
 % ============================================================================
 \documentclass[11pt]{ctexart}
 \usepackage{amsmath,amssymb}
 \usepackage{geometry}
 \geometry{a4paper,margin=2.5cm}
 \title{MOS 电容一维电热平衡仿真：物理模型与数值方法完整推导}
-\author{index.html 模型介绍面板源文稿}
+\author{mos.html 模型介绍面板源文稿}
 \date{}
 \begin{document}
 \maketitle
 
-\noindent 本文与 \texttt{index.html} 的仿真实现逐一对应。单位制：长度 cm、电势 V、浓度 cm$^{-3}$、电荷 C。
+\noindent 本文与 \texttt{mos.html} 的仿真实现逐一对应。单位制：长度 cm、电势 V、浓度 cm$^{-3}$、电荷 C。
 常数（$T=300\,\mathrm{K}$）：
 % [eq:constQ] [inline] [section:二、平衡载流子统计]
 \(q=1.602\times10^{-19}\,\mathrm{C}\)，
