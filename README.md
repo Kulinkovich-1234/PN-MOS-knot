@@ -21,6 +21,7 @@
 | `pn.html` | PN 结一维漂移-扩散仿真 |
 | `model-doc-pn.tex` | PN 模型介绍面板的公式唯一源文稿（十节推导） |
 | `screenshots/` | 页面截图 |
+| `slides/` | Beamer 讲座幻灯片（`main.tex` + `figures/` + `tools/capture.mjs`） |
 | `README.md` | 本文件 |
 
 > 命名说明：MOS 页面曾用名 `index.html`（现 `mos.html`）、文稿曾用名 `model-doc.tex`（现 `model-doc-mos.tex`），两页命名现已对齐 `*-mos` / `*-pn` 约定。
@@ -93,6 +94,29 @@
 | 栅/结边界 | 金属 Robin 或多晶三层双 Dirichlet | 欧姆接触，φ_n=φ_p=0/V |
 | 扫描 | −3 ~ +3 V，121 点 warm-start，分片异步 | −5 ~ +1 V，电压延拓 + 自适应二分 |
 | 后处理 | 微分电容中心差分 + 5 点平滑、Pao-Sah 积分、V_T 插值 | C_dep/C_diff 中心差分 + 5 点平滑、终端电流全边平均 |
+
+## 讲座幻灯片（slides/）
+
+`slides/main.tex` 是一套 57 帧的中文 Beamer 讲座《PN 结与 MOS 器件物理》，
+按"费米能级与两种电势 → PN 结 → MOS 电容 → MOS 管 → 体效应与栅功函数"展开，
+所有能带图与特性曲线截图均来自本仓库的两个仿真页面。
+
+**编译**（需要 xelatex + ctexbeamer + pgfplots，中文字体用微软雅黑）：
+
+```bash
+cd slides && xelatex main.tex && xelatex main.tex
+```
+
+**重新截图**（需要 Node.js 与本机 Chrome；不改参数时无需重跑）：
+
+```bash
+cd slides/tools
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install   # 使用本机 Chrome，不下载浏览器
+node capture.mjs          # 全部；或 node capture.mjs pn / mos
+```
+
+截图输出到 `slides/figures/`。注意 `pn.html` 图 1 的 `fixedY=[-6.5,1.5]` 是为滑块动画设计的
+满幅窗口，`capture.mjs` 会按偏压状态收紧该范围后再截图。
 
 ## 适用范围与已知简化
 
